@@ -101,11 +101,9 @@ commented out pending Vera Rubin CUDA stack availability (INFERENG-9846).
 - Geospatial and plugin packages (`vllm-bart-plugin`, `vllm-beam-search-plugin`,
   `geobenchv2`, `algorithm-nexus`, `torchgeo`) are commented out for Vera Rubin
   tech preview (INFERENG-9846)
-- Constraints: same CVE/compat pins as cuda13.0 except no `grpcio-reflection<1.82.0`,
-  `protobuf`, `uv-build<0.12.6`, `quack-kernels==0.6.4`, or `nvidia-cudnn-frontend`
-  caps; shares `aiohttp`, `urllib3`, `boto3`, `numba`, `numpy<2.5`,
-  `torchgeo<0.10`, `transformers<5.15.0`, `uv-build<0.12.6`, `quack-kernels==0.6.4`,
-  `nvidia-cudnn-frontend<1.29.0`
+- Constraints: `aiohttp>=3.13.3`, `urllib3>=2.6.3`, `boto3==1.43.46`, `numba==0.65.0`,
+  `numpy<2.5`, `torchgeo<0.10`, `transformers<5.15.0`, `uv-build<0.12.6`,
+  `quack-kernels==0.6.4`, `nvidia-cudnn-frontend<1.29.0`
 
 **rocm7.14-ubi9:**
 - `vllm[audio,tensorizer]==0.26.0+rhaiv.7`

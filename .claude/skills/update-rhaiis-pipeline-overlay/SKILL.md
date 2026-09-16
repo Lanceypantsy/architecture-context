@@ -122,8 +122,16 @@ This section must cover:
   (has `+rhai` local version tag) or upstream.
 - **Package Content by Variant** — For each variant, list: vLLM package + extras,
   key functional packages (FlashInfer, AMD-specific kernels, IBM-specific, etc.),
-  notable security constraints with JIRA references. Group variants logically
-  (CUDA, ROCm, CPU, Gaudi, Neuron, Spyre, TPU).
+  and constraints. Group variants logically (CUDA, ROCm, CPU, Gaudi, Neuron,
+  Spyre, TPU).
+
+  **Constraints must be transcribed directly from each variant's
+  `constraints.txt` — do not infer, compare, or derive them from another
+  variant's file.** List every pinned package and version exactly as it appears.
+  If a constraint is absent from a variant's file, do not mention it for that
+  variant. Never write comparative prose like "same as X except Y" — this
+  pattern has produced contradictions where the exception list and the shared
+  list disagree. State what each variant's `constraints.txt` actually contains.
 - **Constraints-Rules Delegation** — Count how many variants use `torch-2.11.0 *`
   via constraints-rules.txt. Note exceptions: neuron-ubi9 disables delegation
   entirely; tpu-ubi9 uses `torch-2.10.0 *` (a different torch version, not
