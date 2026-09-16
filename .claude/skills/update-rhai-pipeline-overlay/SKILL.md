@@ -14,9 +14,9 @@ Refresh `overlays/0020-rhai-pipeline.md` with current information from the
 
 The overlay documents the RHAI wheel package index management system: which
 variants are published, what collections exist, and how wheels flow from CI
-builds to the customer-facing Pulp index. When the repo changes — new variant
+builds to the customer-facing Pulp index. When the repo changes -- new variant
 in `publish_config.yml`, new collection, updated product version, or changes to
-the Pulp publishing workflow — run this skill to update the overlay.
+the Pulp publishing workflow -- run this skill to update the overlay.
 
 ## Instructions
 
@@ -41,22 +41,31 @@ Read the following files to extract current state. All paths are relative to
 `{REPO}`:
 
 **Version information:**
-- `product-version.yml` → `PRODUCT_VERSION` variable
-- `builder-image-version.yml` → `BUILDER_IMAGE_VERSION` variable
-- `supported_versions.yml` → full version history and per-version variant lists
+- `product-version.yml` -> `PRODUCT_VERSION` variable
+- `builder-image-version.yml` -> `BUILDER_IMAGE_VERSION` variable
+- `supported_versions.yml` -> full version history and per-version variant lists
 
 **Published variant configuration:**
-- `publish_config.yml` → per-variant `VARIANT`, `WHEEL_REPO_VERSION`, and
+- `publish_config.yml` -> per-variant `VARIANT`, `WHEEL_REPO_VERSION`, and
   `SDIST_REPO_VERSION` entries (these are the variants currently wired for
   production publication)
 
-**Build matrix:**
-- `bin/regen-gitlab-jobs.py` → the `COLLECTIONS` dict (collection name →
-  list of variant name strings), the `VARIANTS` dict (variant name → list of
-  arches), and the `OMIT_JOBS` set (explicitly excluded `(collection, variant,
-  arch)` tuples). This is the authoritative source for the CI matrix. Note:
-  `OMIT_JOBS` is checked against collection names only; entries with non-collection
-  strings (e.g. package names) are dead code.
+**Build matrix and Pulp routing:**
+- `{FONDUE_ROOT}/ci-job-definitions.yml` (at the **fondue monorepo root**, not
+  inside `rhai-pipeline/`) -> the authoritative source for the CI matrix and
+  per-collection / per-variant Pulp routing. Read this file, not any script
+  inside `rhai-pipeline/bin/`. Key sections to extract:
+  - `collections:` block -> `COLLECTIONS` (collection -> variants), `VARIANTS`
+    (variant -> arches), `omit_jobs` list
+  - `overrides._default` -> default `PULP_DOMAIN` (e.g. `public-rhai`)
+  - `overrides.<collection>` -> collection-level routing exceptions (e.g.
+    `vllm-deps/torch-2.11` -> `PULP_DOMAIN: rhai`)
+  - `variant_overrides.<collection>.<variant>` -> per-variant routing overrides
+    applied after collection-level overrides. Precedence:
+    `_default -> <collection> -> variant_overrides.<collection>.<variant>`.
+    Currently: `rhaiis/gaudi-ubi9`, `rhaiis/neuron-ubi9`, `rhaiis/tpu-ubi9`
+    all set `PULP_DOMAIN: rhai` (private, AIPCC-28553) -- these variants'
+    wheels cannot be publicly redistributed.
 
 **Collection contents (spot-check):**
 - For each collection subdirectory under `collections/`, read the directory
@@ -93,13 +102,13 @@ hardcoded list:
   `collections/rhaiis/spyre-ubi9/requirements.txt`, capture:
   - `vllm` exact version string (note the local version tag and fork origin)
   - `sendnn-inference` pinned version; check whether it differs by arch
-  - `torch-sendnn` pinned version — pre-built IBM wheel, not compiled by builder
-  - `torch-nnpa` pinned version — pre-built IBM wheel, s390x only
+  - `torch-sendnn` pinned version -- pre-built IBM wheel, not compiled by builder
+  - `torch-nnpa` pinned version -- pre-built IBM wheel, s390x only
   - `ibm-fms` pinned version (also check `constraints.txt`)
-  - `spyremetrics` and `ibm-aiu-smi` — new wheels; capture version and arch
+  - `spyremetrics` and `ibm-aiu-smi` -- new wheels; capture version and arch
     restrictions if present
   - **Do not** list `aiu-monitor` / `ibm-aiu-monitor` as wheel collection
-    packages — both are blocked via `global-constraints.txt`
+    packages -- both are blocked via `global-constraints.txt`
     (`aiu-monitor<0.0.0`, `ibm-aiu-monitor<0.0.0`) and live in the base image
 
 ### Step 3: Read the Current Overlay
@@ -116,32 +125,48 @@ Rewrite `overlays/0020-rhai-pipeline.md` using the following approach:
 `affects`, `provenance`, `author`, `superseded_by`). Update `release` only if
 the product version indicates a new RHOAI release.
 
-**Fact section** — Replace with fresh content derived from the files above.
+**Fact section** -- Replace with fresh content derived from the files above.
 This section must cover:
 
-- **Header** — Purpose of the repo (index management, not compilation);
+- **Header** -- Purpose of the repo (index management, not compilation);
   product name, product version, builder version, Pulp domain, public base URL
 - **Published Variants table** -- One row per variant in `publish_config.yml`;
   columns: variant, architectures, key release-defining package versions (found
   using the heuristics from Step 2), public index path.
-- **Collections and Variant Coverage table** — One row per collection with
-  purpose description and which variants it covers; derived from `regen-gitlab-jobs.py`
-- **OMIT_JOBS** — Explicit exclusions from the matrix with their reasons
-- **Test jobs** — Which collections have `ENABLE_TEST_JOBS: true`
-- **The `rhai` Collection** — Team ownership structure; list notable team files
+- **Collections and Variant Coverage table** -- One row per collection with
+  purpose description and which variants it covers; derived from
+  `{FONDUE_ROOT}/ci-job-definitions.yml` (the authoritative source per Step 2).
+  Note all routing exceptions from the same file:
+  - **Collection-level**: `vllm-deps/torch-2.11` -> private domain `rhai`
+    (`private.console.redhat.com`); used by the vLLM team for test builds
+    during the transition to supplying pre-built wheels. Do not assert
+    different deletion or promotion behavior -- the documentation does not
+    establish that.
+  - **Variant-level** (`variant_overrides`): `rhaiis/gaudi-ubi9`,
+    `rhaiis/neuron-ubi9`, and `rhaiis/tpu-ubi9` -> private domain `rhai`
+    (AIPCC-28553); these variants contain vendor wheels that cannot be publicly
+    redistributed. Precedence: `_default -> overrides.<collection> ->
+    variant_overrides.<collection>.<variant>`.
+- **OMIT_JOBS** -- Explicit exclusions from the matrix with their reasons
+- **Test jobs** -- Which collections have `ENABLE_TEST_JOBS: true`
+- **The `rhai` Collection** -- Team ownership structure; list notable team files
   and their contents
-- **Onboarding Pipeline** — How new packages enter (onboarding → graduation via
-  weekly bot → `rhai` collection)
-- **Pipeline Flow** — Stage list; trigger types; key checks-stage gates
+- **Onboarding Pipeline** -- How new packages enter (onboarding -> graduation via
+  weekly bot -> `rhai` collection)
+- **Pipeline Flow** -- Stage list; trigger types; key checks-stage gates
   (variant-linter, verify-publish-config, validate-package-deletion-manifests)
-- **Pulp Publishing Mechanics** — Two-stage workflow (upload then publish);
+- **Pulp Publishing Mechanics** -- Two-stage workflow (upload then publish);
   repository naming convention; authentication method; `-test` distribution
-  auto-increment
-- **Package Deletion System** — Manifest-driven, enforced at upload time,
+  auto-increment. The general rule -- all collections for a published variant
+  go to the same public Pulp index -- applies only to default-routed collections.
+  Document `vllm-deps` as the named exception with its private routing and
+  rationale (see Collections table notes above). Do not assert that deletion
+  or promotion flows differ for this collection.
+- **Package Deletion System** -- Manifest-driven, enforced at upload time,
   idempotent
-- **Version Branching** — `copy_wheels.py` for EA→GA promotion
+- **Version Branching** -- `copy_wheels.py` for EA->GA promotion
 
-**Impact on Strategies section** — Update to reflect current state. Must include:
+**Impact on Strategies section** -- Update to reflect current state. Must include:
 
 - A bullet establishing this repo as the authoritative Pulp publish gate
 - A bullet on the steps required to add a new collection or variant
@@ -157,7 +182,7 @@ This section must cover:
 - A bullet on the public URL as a stable contract for air-gapped mirroring
 - A bullet on the idempotent deletion system and the onboarding graduation cadence
 
-**ROCm Work Breakdown Patterns** — Include this subsection to guide downstream
+**ROCm Work Breakdown Patterns** -- Include this subsection to guide downstream
 strategy generation. When a strategy involves a ROCm variant update in the
 pipeline (e.g., new ROCm version or ROCm package changes), the pipeline-side
 work decomposes into these epics:
@@ -171,7 +196,7 @@ work decomposes into these epics:
 Strategies referencing ROCm pipeline updates should structure their Technical
 Approach around these epics rather than describing the work as prose.
 
-**Context section** — Keep the rationale unchanged. Update the date and version
+**Context section** -- Keep the rationale unchanged. Update the date and version
 references to remain accurate.
 
 ### Step 5: Write the Updated File
@@ -187,8 +212,8 @@ Output a brief summary:
 Updated overlays/0020-rhai-pipeline.md
 
 Changes:
-- [product version: old → new]
-- [builder version: old → new]
+- [product version: old -> new]
+- [builder version: old -> new]
 - [any variants added/removed from publish_config.yml]
 - [any collections added/removed]
 - [any notable changes to the publishing workflow]
@@ -208,6 +233,6 @@ Repository used: {REPO} (./tmp/fondue/rhai-pipeline is not tracked by git)
 - The script is idempotent: run it again any time the upstream repo changes
 - Do not change the overlay `id` (0020) or `author` fields
 - Preserve AIPCC ticket references when they are still accurate
-- The Pulp version HREFs in `publish_config.yml` are long UUIDs — include only
+- The Pulp version HREFs in `publish_config.yml` are long UUIDs -- include only
   the version number portion in the overlay, not the full HREF
 - Do not commit any changes to the rhai/pipeline repository or to GitLab
