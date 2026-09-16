@@ -26,27 +26,32 @@ and include these YAML files to get fully-defined build pipelines without
 repeating build logic.
 
 **Build Factory**: Owns the per-variant builder container images, the package
-plugin system (~161 plugins), and all build overrides and patches. Internal test
+plugin system (~190 plugins), and all build overrides and patches. Internal test
 collections are maintained in the separate `wheels-test` repository.
 
-### Release State (v42.0.2)
+### Release State (PRODUCT_VERSION 0.0-el9.8)
 
-The builder is versioned with CalVer-style tags (`vYY.MINOR.PATCH`). The
-canonical builder version is `v42.0.2`. Consumer repos pin to a specific tag in
-their `builder-image-version.yml`; consumer pins may lag the builder's latest tag.
-
-`release.yaml` is the single source of truth for the next version. Merging a
-change to `release.yaml` triggers `create-release-tag` to push the git tag,
-which triggers builder image builds tagged with that version.
+The builder uses a product version scheme defined in `builder/product-version.yml`
+(`PRODUCT_VERSION: "0.0-el9.8"`). The format encodes the RHEL/UBI base image
+generation: `0.0` for RHEL 9.4, `0.0-el9.6` for RHEL 9.6, `0.0-el9.8` for RHEL 9.8.
+Consumer repos use `builder-image-version.yml` to derive a `BUILDER_IMAGE_VERSION`
+combining the PRODUCT_VERSION and MR IID (e.g., `ci-0.0-el9.8-123` for MR pipelines,
+`ci-0.0-el9.8-` for post-merge). Release tag pipelines use the git tag directly as
+the image tag. The latest release tag is `v46.0.0`.
 
 ### Builder Images
 
 One container image is built per variant × architecture combination.
 
-**Common foundation across all images:**
+**Common foundation across UBI9 variants** (all variants except `cpu-hb`):
 
-- **Base OS:** RHEL 9.6 (`registry.access.redhat.com/ubi9/ubi:9.6-1760340943`)
+- **Base OS:** RHEL 9.8 (`registry.access.redhat.com/ubi9/ubi:9.8-1785906690`)
 - **Python:** 3.12
+
+**`cpu-hb` exception:** `cpu-hb` is a special-purpose variant for Hummingbird FIPS
+testing — not a production variant. It uses a non-UBI9 base image
+(`registry.access.redhat.com/hi/python:3.12-fips-builder`) with Python 3.12.13
+baked in. Production builds use UBI9-based images.
 - **GCC toolset:** 14 (`/opt/rh/gcc-toolset-14/root`)
 - **Registry:** `registry.gitlab.com/redhat/rhel-ai/wheels/builder/builder-{VARIANT}-{ARCH}:{VERSION}`
 
@@ -61,6 +66,8 @@ LLVM and Triton commit hashes are pinned in `build-args/common.conf`:
 | 3.6.0 | `f6ded0be` |
 | 3.7.0 | `ac5dc54d` |
 | 3.7.1 | `1f126a6d` |
+| 3.8.0 | `5f07f818` |
+| 3.8.0+rhaiv.1 | `46111560` |
 
 **Variant x Architecture Matrix:**
 
@@ -72,6 +79,7 @@ experimental or transitional. Cross-reference with `rhai/pipeline` and
 | Variant | Architectures | Hardware |
 |---|---|---|
 | `cpu-ubi9` | aarch64, ppc64le, s390x, x86_64 | Generic CPU |
+| `cpu-hb` | aarch64, ppc64le, s390x, x86_64 | Hummingbird FIPS CPU (non-UBI9 base: `registry.access.redhat.com/hi/python:3.12-fips-builder`) |
 | `cuda12.9-ubi9` | aarch64, x86_64 | NVIDIA CUDA 12.9.1 (sm 7.5–12.0+PTX) |
 | `cuda13.0-ubi9` | aarch64, x86_64 | NVIDIA CUDA 13.0.2 (sm 7.5–12.1+PTX) |
 | `cuda13.2-ubi9` | aarch64, x86_64 | NVIDIA CUDA 13.2.0 (sm 7.5–12.0+PTX) |
@@ -82,6 +90,7 @@ experimental or transitional. Cross-reference with `rhai/pipeline` and
 | `spyre-ubi9` | ppc64le, s390x, x86_64 | IBM Spyre |
 | `tpu-ubi9` | x86_64 | Google Cloud TPU (Torch/XLA) |
 
+`cpu-hb` is the first variant to use a non-UBI9 base image (Hummingbird FIPS).
 `rubin-ubi9` (CUDA 13.4 Developer Preview, Rubin R100 / sm_107a) was added
 2026-07-07 as the initial Rubin variant.
 
@@ -92,6 +101,7 @@ AOTriton LLVM commit pins in `build-args/rocm7.14-ubi9.conf`:
 - AOTriton 0.9b0: `86b69c31`
 - AOTriton 0.10b0: `3c709802`
 - AOTriton 0.11b0: `57088512`
+- AOTriton 0.12b0: `7f77ca0d`
 - FlyDSL: `7f77ca0d`
 
 ### Pipeline-API Contract
@@ -103,6 +113,7 @@ Consumer repos include `pipeline-api/ci-wheelhouse.yml` once per
 |---|---|---|---|
 | `JOB_PREFIX` | string | `""` | Prefix added to all generated job names |
 | `COLLECTION` | string | (required) | Collection name (e.g., `rhai`, `rhaiis`) |
+| `COLLECTION_SLUG` | string | (required) | Filesystem/URL-safe form of COLLECTION with `/` → `-` (e.g., `vllm-deps/torch-2.11` → `vllm-deps-torch-2.11`). Used for release tarball names and index paths |
 | `VARIANT` | enum | (required) | Accelerator variant; must be one of the 10 defined options |
 | `ARCH` | enum | `x86_64` | CPU architecture: aarch64, ppc64le, s390x, x86_64 |
 | `ENABLE_REPEATABLE_BUILD_MODE` | boolean | `false` | Lock dependency graph from prior bootstrap |
@@ -120,11 +131,18 @@ Consumer repos include `pipeline-api/ci-wheelhouse.yml` once per
 | `BUILDER_DIR` | string | `builder` | Path to builder dir containing pipeline-api/ and scripts |
 | `PRODUCT_VERSION` | string | `$PRODUCT_VERSION` | Product version for wheel index paths and release naming |
 | `WHEEL_SERVER_PROJECT_PREFIX` | string | `$WHEEL_SERVER_PROJECT_PREFIX` | GitLab group prefix for wheel index projects |
+| `RELEASE_TAG_PREFIX` | string | `""` | Prefix for release version tags (e.g. `builder-`, `rhai-`). Namespaces wheelserver tags in the monorepo |
+| `PRODUCT_VERSION_FILE` | string | `product-version.yml` | Path to product version YAML, relative to repo root. Used in changes: trigger rules |
+| `PULP_CACHE` | string | `""` | Set to `true` to use the Pulp wheel cache and upload to Pulp instead of GitLab (builder collections only) |
 
 `EPHEMERAL_COLLECTION` is a non-spec environment variable (not in `spec.inputs:`)
 that the `before_script` reads to synthesize a collection directory from env vars
 (`REQUIREMENTS_TXT`, `CONSTRAINTS_TXT`, `CONSTRAINTS_RULES_TXT`). Consumer repos
 that need it set it as a CI variable, not as an `inputs:` value.
+
+Note: `cpu-hb` appears in the image builder variant list (`images.yml`) but NOT
+in the pipeline-API `ci-wheelhouse.yml` VARIANT enum — it uses the `torchless`
+collection path rather than the standard wheelhouse pipeline.
 
 **Jobs defined per instantiation:**
 
@@ -161,7 +179,7 @@ architecture). Release and linter jobs use `aipcc` or `aipcc-small-x86_64`.
 
 ### Package Plugin System
 
-161 Python package plugins registered as `fromager.project_overrides` entry
+~190 Python package plugins registered as `fromager.project_overrides` entry
 points in `pyproject.toml`. Hook points: `get_resolver_provider`, `extra_environ`,
 `extra_cmake_args`, `pre_build`, `post_build`, `post_bootstrap`, `prebuilt_wheel`.
 
@@ -177,27 +195,27 @@ points in `pyproject.toml`. Hook points: `get_resolver_provider`, `extra_environ
 - **`torch.py`**: For CUDA variants, fetches pre-built wheels from
   variant-specific GitLab projects (`_CUDA_PREBUILT_PROJECT_IDS`). Standard
   resolution for non-CUDA.
-- **Simple plugins** (~684 bytes each): Most plugins exist solely to cap the
+- **Simple plugins** (~190 total): Most plugins exist solely to cap the
   `setuptools` version (AIPCC-15912). They register but delegate all behavior
   to defaults.
 
 **Spyre-specific pre-built packages** (sourced from a private Pulp index):
 
+The builder settings below define the *sourcing mechanism* only. The pinned
+version is declared in the consumer pipeline requirements.txt files (rhai and
+rhaiis pipelines), not here. Version authority lives in the consumer pipelines
+and must align with `SPYRE_VERSION` in the base image build args.
+
 - **`torch_sendnn`** (`pre_built: true`): IBM-distributed wheel mirrored by
   AIPCC at `https://private.console.redhat.com/api/pulp-content/rhai/spyre-pypi/simple/`.
-  Current version: `1.1.1`. Not compiled from source.
+  Latest changelog entry: `1.1.1` (2026-02-19). Not compiled from source.
 - **`torch_nnpa`** (`pre_built: true`, added 2026-07-14): IBM-distributed s390x
-  wheel (Z only), also mirrored from the same private Spyre PyPI index. Current
-  version: `1.5.0`. Not compiled from source.
+  wheel (Z only), also mirrored from the same private Spyre PyPI index. Latest
+  changelog entry: `1.5.0` (2026-07-14). Not compiled from source.
 - **`sendnn_inference`**: Compiled from source; replaces `vllm-spyre`
   (AIPCC-14693). Requires `setuptools` build override.
 - **`ibm_fms`**: Sourced from the GitLab mirror at
   `gitlab.com/redhat/rhel-ai/core/mirrors/github/foundation-model-stack/foundation-model-stack`.
-
-**Global constraint guards** (`collections/global-constraints.txt`):
-`aiu-monitor<0.0.0` and `ibm-aiu-monitor<0.0.0` (AIPCC-15183) prevent the
-aiu-monitor package from being pulled into any wheel collection — it is installed
-in the base image instead.
 
 ### Internal Collections
 
@@ -213,7 +231,10 @@ repository; the collections below are the builder's own build-verification sets:
 | `torch-2.9.1/neuron-ubi9` | neuron-ubi9 | Torch 2.9.1 for AWS Neuron |
 | `torch-2.10.0/tpu-ubi9` | tpu-ubi9 | Torch 2.10.0 for Google Cloud TPU |
 | `torch-2.11.0/{8 variants}` | cpu, cuda12.9, cuda13.0, cuda13.2, gaudi, rocm7.14, rubin, spyre | Primary collection — torch 2.11.0 + vLLM, ONNX Runtime, FlashInfer, etc. |
-| `torch-2.12.0/cpu-ubi9` | cpu-ubi9 | Torch 2.12.0 (earliest adoption, experimental) |
+| `torch-2.12.0/rocm7.14-ubi9` | rocm7.14-ubi9 | Torch 2.12.0 for ROCm 7.14 |
+| `torch-2.13.0/{3 variants}` | cpu-ubi9, cuda12.9-ubi9, cuda13.0-ubi9 | Torch 2.13.0 (multi-variant expansion) |
+| `torch-2.14.0/{2 variants}` | cpu-torch-day0-ubi9, cuda13.0-ubi9 | Torch 2.14.0 day-0 builds |
+| `torchless/{3 variants}` | cpu-hb, cpu-ubi9, rocm7.14-ubi9 | Non-torch packages for cpu-hb, cpu, and ROCm |
 
 `collections/global-constraints.txt` carries cross-collection version
 constraints with AIPCC ticket references for every entry.
@@ -224,14 +245,15 @@ build.
 
 `overrides/settings.yaml` carries:
 - Global SBOM metadata (`supplier: "Organization: Red Hat"`, namespace, creators)
-- A **changelog** per base variant (cpu-ubi9, cuda-ubi9, rubin-ubi9, gaudi-ubi9,
-  rocm-ubi9, spyre-ubi9, tpu-ubi9). Adding a changelog entry invalidates all
+- A **changelog** per base variant (cpu-ubi9, cpu-hb, cuda-ubi9, rubin-ubi9, gaudi-ubi9,
+  rocm-ubi9, spyre-ubi9, tpu-ubi9, neuron-ubi9). Adding a changelog entry invalidates all
   cached wheels for that variant, forcing a full rebuild. This is the documented
   mechanism for RHEL, CUDA, or ROCm major version bumps — requires staff engineer
   approval and business-day coordination because full rebuilds take 6-12 hours.
+  Most variants last rebuilt 2026-08-10; neuron-ubi9 rebuilt 2026-09-04.
 
-`overrides/settings/` (256 files): per-package YAML fromager settings.
-`overrides/patches/` (70 directories): per-package-version patch sets applied
+`overrides/settings/` (285 files): per-package YAML fromager settings.
+`overrides/patches/` (92 directories): per-package-version patch sets applied
 during `pre_build` hooks.
 
 ## Impact on Strategies
@@ -240,14 +262,16 @@ during `pre_build` hooks.
   toolchain, build scripts, plugin set, and container images simultaneously.
   Updating the builder is a one-value change but may change the behavior of any
   package plugin. Consumer repos may be pinned to a version that lags the
-  builder's latest tag.
+  builder's latest tag (`v46.0.0` as of this refresh).
 - Adding a new accelerator variant requires: new Containerfile parts, new
   build-args conf, new collection entries, and new job instantiations in all
   consumer pipelines. The `VARIANT` input's `options:` enum list in
   `ci-wheelhouse.yml` must be updated in the builder API first — consumers
   cannot reference a variant the builder API does not recognize. The `rubin-ubi9`
-  variant was added this way; strategies proposing new hardware must follow the
-  same path.
+  and `cpu-hb` variants were added this way; strategies proposing new hardware
+  must follow the same path. Note: `cpu-hb` appears in the image builder variant
+  list but not in the pipeline-API `ci-wheelhouse.yml` VARIANT enum — it uses
+  the `torchless` collection path rather than the standard wheelhouse pipeline.
 - The global changelog in `overrides/settings.yaml` is a high-stakes operation.
   Any RFE proposing a RHEL, CUDA, or ROCm major version bump must account for a
   full 6-12 hour rebuild and stakeholder coordination window.
@@ -261,6 +285,9 @@ during `pre_build` hooks.
   in `redhat/rhel-ai/wheels/indexes/`). Any proposal to change the index location
   or layout must account for the `upload_after_build_wheel.py` clean-replace
   pattern and the downstream caches that depend on stable project paths.
+- The `PULP_CACHE` input enables an alternate Pulp-backed wheel cache and upload
+  path; strategies that reference Pulp publishing for builder collections must
+  account for this flag being set.
 
 ### ROCm Work Breakdown Patterns
 
@@ -294,4 +321,4 @@ This overlay was created to capture the state of the wheels builder at the
 what both can do. RFEs that propose changes to the build environment, new
 accelerator support, or changes to the wheel publishing contract need to evaluate
 feasibility against the builder's current architecture. This overlay is updated
-by running the `update-wheels-builder-overlay` skill. Last updated 2026-07-30.
+by running the `update-wheels-builder-overlay` skill. Last updated 2026-09-16.
