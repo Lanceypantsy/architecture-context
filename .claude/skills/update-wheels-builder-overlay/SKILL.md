@@ -72,6 +72,12 @@ lives under two subdirectories: `{FONDUE}/builder/` and
 - `builder/pipeline-api/ci-wheelhouse.yml` → the `inputs:` block at the top of
   the file defines all accepted inputs and their types/defaults. Read at minimum
   the first 120 lines to capture the full inputs block and the job stage names.
+  For the `VARIANT` input specifically: read the enum values directly from the
+  file and report the exact count and list of options as they appear — do not
+  use a hardcoded count or list. Note explicitly that `cpu-hb` and
+  `cpu-torch-day0-ubi9` do NOT appear in this enum; they are handled outside
+  the standard VARIANT enum (cpu-hb uses a separate non-UBI9 base image;
+  cpu-torch-day0-ubi9 is a torch-day0 variant processed by a different path).
 
 **Plugin system** (in `{FONDUE}/builder/`):
 - `builder/pyproject.toml` → count the entries under

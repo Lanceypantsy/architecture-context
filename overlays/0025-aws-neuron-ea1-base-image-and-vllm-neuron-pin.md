@@ -1,7 +1,7 @@
 ---
 id: "0025"
 title: AWS Neuron base image (RHEL) and vllm-neuron pin diverge from generated docs as of 3.6 EA1
-status: active
+status: superseded
 created: 2026-08-26
 affects:
   - platform
@@ -10,7 +10,7 @@ release:
 provenance:
   - https://redhat.atlassian.net/browse/RHAISTRAT-2597
 author: Reshmi Aravind
-superseded_by: null
+superseded_by: "0017, 0019, 0021"
 ---
 
 ## Fact
