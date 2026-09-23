@@ -1,7 +1,7 @@
 ---
 id: "0026"
 title: Google TPU vLLM pin is already 0.26.0+rhaiv.2.tpu, ahead of generated docs
-status: active
+status: superseded
 created: 2026-08-27
 affects:
   - platform
@@ -10,7 +10,7 @@ release:
 provenance:
   - https://redhat.atlassian.net/browse/RHAISTRAT-2595
 author: Reshmi Aravind
-superseded_by: null
+superseded_by: "0021"
 ---
 
 ## Fact

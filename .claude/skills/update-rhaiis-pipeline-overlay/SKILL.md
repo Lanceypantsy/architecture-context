@@ -96,6 +96,20 @@ From `constraints.txt`, confirm:
   through an explicit `"enabled": false` packageRule. Check whether the current
   gaudi `requirements.txt` has or lacks a `+rhai` tag, and describe the update
   situation accurately.
+- `renovate.json` → the `nm-vllm-ent` (vLLM) `enabled: false` packageRules.
+  Enumerate **every** packageRule whose depNames include `nm-vllm-ent`,
+  recording for each: `enabled`, the full `matchBaseBranches` list, and the
+  full `matchFileNames` list. Build a per-variant × per-branch disabled matrix
+  from ALL of them — do not stop at the first match, and do not assume a
+  variant is disabled on the same branches as its neighbours.
+  - **`matchBaseBranches` is literal.** A rule applies only to the branches it
+    lists. If no `enabled: false` rule lists `main`, then vLLM updates are NOT
+    disabled on `main` — Renovate can open bump MRs there. Never generalize a
+    branch-scoped disable (e.g. 3.3/3.4/3.5) to `main`, and never describe a
+    disable as a "main-targeting" rule unless `main` literally appears in its
+    `matchBaseBranches`.
+  - When a variant is disabled, report **all** branches it is disabled on
+    (e.g. gaudi on both 3.4 and 3.5), not just one.
 
 ### Step 3: Read the Current Overlay
 
@@ -122,8 +136,16 @@ This section must cover:
   (has `+rhai` local version tag) or upstream.
 - **Package Content by Variant** — For each variant, list: vLLM package + extras,
   key functional packages (FlashInfer, AMD-specific kernels, IBM-specific, etc.),
-  notable security constraints with JIRA references. Group variants logically
-  (CUDA, ROCm, CPU, Gaudi, Neuron, Spyre, TPU).
+  and constraints. Group variants logically (CUDA, ROCm, CPU, Gaudi, Neuron,
+  Spyre, TPU).
+
+  **Constraints must be transcribed directly from each variant's
+  `constraints.txt` — do not infer, compare, or derive them from another
+  variant's file.** List every pinned package and version exactly as it appears.
+  If a constraint is absent from a variant's file, do not mention it for that
+  variant. Never write comparative prose like "same as X except Y" — this
+  pattern has produced contradictions where the exception list and the shared
+  list disagree. State what each variant's `constraints.txt` actually contains.
 - **Constraints-Rules Delegation** — Count how many variants use `torch-2.11.0 *`
   via constraints-rules.txt. Note exceptions: neuron-ubi9 disables delegation
   entirely; tpu-ubi9 uses `torch-2.10.0 *` (a different torch version, not
@@ -131,8 +153,14 @@ This section must cover:
   disable delegation must be called out explicitly.
 - **Pipeline Flow** — Stage list; the fact that no publish jobs exist; artifact
   lifecycle explanation
-- **Update Automation** — Renovate management status per variant; which variants
-  are excluded from auto-updates
+- **Update Automation** — Renovate management status per variant. State the
+  status on `main` separately from release branches. For any variant claimed
+  "manually updated" or "excluded from auto-updates," cite the specific
+  mechanism: either the `enabled: false` packageRule with its exact
+  `matchBaseBranches` (and if that rule does not cover `main`, say the variant
+  is Renovate-trackable on `main`), or the Gaudi-style regex format mismatch.
+  Derive main-branch behavior from the *absence* of a covering rule — do not
+  infer it from release-branch rules.
 
 **Impact on Strategies section** — Update to reflect current state. Must include:
 
